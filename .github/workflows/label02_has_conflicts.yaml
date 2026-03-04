@@ -16,14 +16,23 @@ jobs:
             const { owner, repo } = context.repo;
 
             async function checkPR(pr) {
-              // Volvemos a pedir el PR para asegurar mergeable_state actualizado
-              const { data } = await github.rest.pulls.get({
-                owner,
-                repo,
-                pull_number: pr.number
-              });
-
+              let data;
+              let retries = 5;
               const issue_number = pr.number;
+
+              while (retries > 0) {
+                const response = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: issue_number
+                });
+                data = response.data;
+                console.log(`PR #${issue_number} state: ${data.mergeable_state}`);
+                if (data.mergeable_state !== 'unknown') break;
+                
+                await new Promise(r => setTimeout(r, 3000));
+                retries--;
+              }
 
               if (data.mergeable_state === 'dirty') {
                 await github.rest.issues.addLabels({
