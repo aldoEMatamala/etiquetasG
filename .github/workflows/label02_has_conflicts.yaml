@@ -5,6 +5,12 @@ on:
     types: [opened, synchronize, reopened]
   push:
     branches: [main]
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
 jobs:
   conflicts:
     runs-on: ubuntu-latest
@@ -27,21 +33,26 @@ jobs:
                   pull_number: issue_number
                 });
                 data = response.data;
-                console.log(`PR #${issue_number} state: ${data.mergeable_state}`);
-                if (data.mergeable_state !== 'unknown') break;
+                console.log(`PR #${issue_number} - mergeable: ${data.mergeable}, state: ${data.mergeable_state}`);
                 
-                await new Promise(r => setTimeout(r, 3000));
+                // Si mergeable es null, GitHub aún está calculando
+                if (data.mergeable !== null) break;
+                
+                await new Promise(r => setTimeout(r, 5000));
                 retries--;
               }
 
-              if (data.mergeable_state === 'dirty') {
+              // Usamos mergeable === false para detectar conflictos reales
+              if (data.mergeable === false) {
+                console.log(`Adding "Conflictos" label to PR #${issue_number}`);
                 await github.rest.issues.addLabels({
                   owner,
                   repo,
                   issue_number,
                   labels: ['Conflictos']
                 });
-              } else {
+              } else if (data.mergeable === true) {
+                console.log(`Removing "Conflictos" label from PR #${issue_number} (if exists)`);
                 try {
                   await github.rest.issues.removeLabel({
                     owner,
@@ -60,7 +71,6 @@ jobs:
             }
 
             if (context.eventName === 'push') {
-              // Buscar PRs abiertos contra master
               const { data: prs } = await github.rest.pulls.list({
                 owner,
                 repo,
